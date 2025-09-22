@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>모의 면접 프로그램 (수정된 버전)</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+        body { background-color: #F0F4F8; font-family: 'Noto Sans KR', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .container { display: flex; width: 95%; max-width: 1400px; height: 95vh; max-height: 800px; background-color: white; border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,.1); overflow: hidden; }
+        .video-section { flex: 6; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 30px; box-sizing: border-box; background-color: #fff; border-right: 1px solid #EAECEF; position: relative; }
+        #countdown { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 10em; font-weight: 700; color: rgba(255,255,255,.8); z-index: 100; display: none; text-shadow: 0 0 20px rgba(0,0,0,.5); }
+        .header-info { width: 100%; z-index: 10; }
+        #programTitle { font-size: 1.8em; font-weight: 700; color: #4A90E2; margin: 0 0 10px 0; }
+        #usageGuide { font-size: 0.9em; color: #888; line-height: 1.6; margin: 0; padding-left: 5px; }
+        .video-container { width: 100%; flex-grow: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 0; }
+        #webcam { width: 100%; max-height: 100%; border-radius: 16px; background-color: #111; transform: scaleX(-1); object-fit: cover; }
+        #timer { font-size: 1.5em; color: #333; font-family: 'Courier New', Courier, monospace; margin-top: 15px; }
+        .controls { display: flex; gap: 15px; align-items: center; margin-top: 15px; }
+        .control-item { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+        .control-item span { font-size: .8em; color: #888; }
+        .controls button { background-color: #F0F4F8; border: none; width: 50px; height: 50px; border-radius: 50%; cursor: pointer; font-size: 1.5em; color: #4A90E2; display: flex; justify-content: center; align-items: center; transition: all .2s ease-in-out; }
+        .controls button:hover { background-color: #EAECEF; transform: translateY(-2px); }
+        .controls button:disabled { opacity: .5; cursor: not-allowed; }
+        #recordBtn { background-color: #FF7070; color: white; width: 60px; height: 60px; font-size: 1.1em; }
+        #recordBtn.recording { background-color: #4A90E2; }
+        .info-section { flex: 4; background-color: #F9FAFB; padding: 30px; box-sizing: border-box; display: flex; flex-direction: column; gap: 20px; overflow-y: auto; }
+        .info-section h3 { margin: 0 0 10px 0; color: #333; font-size: 1.1em; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+        .input-group { background: white; padding: 15px; border-radius: 12px; border: 1px solid #EAECEF; }
+        .input-group input, .input-group select { width: 100%; padding: 12px; background-color: #F0F4F8; border: 1px solid #EAECEF; color: #333; border-radius: 8px; font-size: 1em; }
+        #customQuestion { margin-top: 10px; }
+        .output-group { background: white; padding: 15px; border-radius: 12px; border: 1px solid #EAECEF; flex-grow: 1; display: flex; flex-direction: column; }
+        .output-box { overflow-y: auto; flex-grow: 1; line-height: 1.7; font-size: 0.95em; }
+        #copyBtn { margin-left: auto; padding: 5px 10px; font-size: 0.8em; background-color: #4A90E2; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        .feedback-guide p { margin: 10px 0; font-size: 0.9em; }
+        .feedback-guide a { display: block; text-align: center; padding: 15px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 1.1em; background-color: #333; color: white; transition: background-color 0.2s; }
+        .feedback-guide a:hover { background-color: #555; }
+        @media (max-width: 900px) {
+            body { height: auto; padding: 10px 0; }
+            .container { flex-direction: column; height: auto; max-height: none; width: 95%; }
+            .video-section { border-right: none; border-bottom: 1px solid #EAECEF; padding: 20px; }
+            .info-section { padding: 20px; }
+            #programTitle { font-size: 1.5em; }
+            .controls button { width: 45px; height: 45px; font-size: 1.3em; }
+            #recordBtn { width: 55px; height: 55px; font-size: 1em; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="video-section">
+            <div id="countdown"></div>
+            <div class="header-info">
+                <h1 id="programTitle">모의 면접 프로그램 (수정된 버전)</h1>
+                <p id="usageGuide">답변 종료 후 '답변 복사' 버튼을 누르고, 'AI 기반 피드백 받기'를 눌러 챗봇에게 질문하세요.</p>
+            </div>
+            <div class="video-container">
+                <video id="webcam" autoplay playsinline muted></video>
+                <p id="timer">00:00</p>
+            </div>
+            <div class="controls">
+                <div class="control-item"><button id="flipBtn" title="좌우 반전">🔄</button><span>반전</span></div>
+                <div class="control-item"><button id="pauseBtn" title="일시 정지" disabled>⏸️</button><span>정지</span></div>
+                <div class="control-item"><button id="recordBtn" title="녹화 시작">녹화</button></div>
+                <div class="control-item"><button id="saveBtn" title="영상 저장" disabled>💾</button><span>저장</span></div>
+            </div>
+        </div>
+        <div class="info-section">
+             <div class="input-group"><h3>1. 희망 학과</h3><input type="text" id="department" placeholder="예) 인공지능학과"></div>
+            <div class="input-group">
+                <h3>2. 면접 질문</h3>
+                <select id="questionSelect">
+                    <option value="자기소개 및 지원동기">가. 자기소개 및 지원동기</option>
+                    <option value="자신의 성격의 장점과 단점">나. 자신의 성격의 장점과 단점</option>
+                    <option value="지원 학과 관련 가장 기억에 남는 활동">다. 지원 학과 관련 가장 기억에 남는 활동</option>
+                    <option value="입학 후 구체적인 학업 계획">라. 입학 후 구체적인 학업 계획</option>
+                    <option value="마지막으로 하고 싶은 말">마. 마지막으로 하고 싶은 말</option>
+                    <option value="custom">바. (직접 입력)</option>
+                </select>
+                <input type="text" id="customQuestion" placeholder="면접 질문을 직접 입력하세요." style="display: none;">
+            </div>
+            <div class="output-group">
+                <h3 style="display: flex; align-items: center;">3. 학생 답변 내용 <button id="copyBtn">📋 답변 복사</button></h3>
+                <div id="transcriptBox" class="output-box">답변을 녹화하면 음성인식 결과가 여기에 표시됩니다...</div>
+            </div>
+            <div class="output-group">
+                <h3>4. AI 피드백 받기</h3>
+                <div class="output-box feedback-guide">
+                    <p>1. 위 '답변 복사' 버튼을 클릭하세요.<br>2. 아래 '피드백 받기' 버튼을 눌러 챗봇을 여세요.<br>3. 챗봇에게 복사한 내용을 붙여넣고 질문하세요.</p>
+                    <a href="https://chatgpt.com/g/g-68ce2135468c8191b14ed64164d81d30-ai-giban-moyi-myeonjeob-peurogeuraem" target="_blank">🤖 AI 기반 피드백 받기</a>
+                </div>
+            </div>
+        </div>
+    </div>
+<script>
+    // --- 1. DOM 요소 가져오기 ---
+    const webcamVideo = document.getElementById("webcam");
+    const flipBtn = document.getElementById("flipBtn");
+    const pauseBtn = document.getElementById("pauseBtn");
+    const recordBtn = document.getElementById("recordBtn");
+    const saveBtn = document.getElementById("saveBtn");
+    const timerDisplay = document.getElementById("timer");
+    const questionSelect = document.getElementById("questionSelect");
+    const customQuestionInput = document.getElementById("customQuestion");
+    const countdownDisplay = document.getElementById("countdown");
+    const transcriptBox = document.getElementById("transcriptBox");
+    const copyBtn = document.getElementById("copyBtn");
+    
+    // --- 2. 상태 변수 및 객체 초기화 ---
+    let stream;
+    let mediaRecorder;
+    let recordedChunks = [];
+    let isFlipped = false;
+    let isPaused = false;
+    let timerInterval = null;
+    let seconds = 0;
+    let fullTranscript = "";
+    
+    // 음성 인식 API 설정
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    let recognition;
+    if (SpeechRecognition) {
+        recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = "ko-KR";
+
+        recognition.onresult = (event) => {
+            let interimTranscript = "";
+            let finalTranscript = "";
+            for (let i = 0; i < event.results.length; i++) {
+                const transcript = event.results[i][0].transcript;
+                if (event.results[i].isFinal) {
+                    finalTranscript += transcript;
+                } else {
+                    interimTranscript += transcript;
+                }
+            }
+            transcriptBox.innerHTML = finalTranscript + '<i style="color:#999;">' + interimTranscript + "</i>";
+            fullTranscript = finalTranscript.trim();
+        };
+        
+        recognition.onerror = (event) => {
+            transcriptBox.textContent = `음성 인식 오류: ${event.error}. 크롬 브라우저를 이용해 보세요.`;
+            console.error("Speech recognition error:", event.error);
+        };
+    } else {
+        transcriptBox.textContent = "현재 브라우저에서는 음성 인식을 지원하지 않습니다.";
+    }
+
+    // --- 3. 핵심 기능 함수 ---
+
+    // 웹캠 설정
+    async function setupWebcam() {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            webcamVideo.srcObject = stream;
+        } catch (err) {
+            alert("카메라와 마이크에 접근할 수 없습니다. 권한을 확인해주세요.");
+            console.error("Error accessing media devices.", err);
+        }
+    }
+
+    // 시간 포맷 변경 (00:00)
+    function formatTime(totalSeconds) {
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    }
+
+    // 타이머 시작
+    function startTimer() {
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+            seconds++;
+            timerDisplay.textContent = formatTime(seconds);
+        }, 1000);
+    }
+    
+    // 타이머 중지
+    function stopTimer() {
+        clearInterval(timerInterval);
+        timerInterval = null;
+    }
+
+    // --- 4. 이벤트 리스너 연결 ---
+
+    // 좌우 반전 버튼
+    flipBtn.addEventListener("click", () => {
+        isFlipped = !isFlipped;
+        webcamVideo.style.transform = isFlipped ? "scaleX(1)" : "scaleX(-1)";
+    });
+
+    // --- ★★★ 수정된 부분: 일시 정지 버튼 (음성인식 유지) ★★★ ---
+    pauseBtn.addEventListener("click", () => {
+        if (!mediaRecorder) return;
+
+        if (isPaused) {
+            // 정지 상태 -> 다시 시작
+            mediaRecorder.resume();
+            startTimer(); // 타이머만 다시 시작
+           
+            pauseBtn.innerHTML = "⏸️";
+            pauseBtn.title = "일시 정지";
+        } else {
+            // 녹화 상태 -> 일시 정지
+            mediaRecorder.pause();
+            stopTimer(); // 타이머만 일시 정지
+
+            pauseBtn.innerHTML = "▶️";
+            pauseBtn.title = "녹화 재개";
+        }
+        isPaused = !isPaused;
+    });
+
+    // 녹화 시작/종료 버튼 (카운트다운 제거 버전)
+    recordBtn.addEventListener("click", () => {
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+            // --- 녹화 종료 로직 (기존과 동일) ---
+            mediaRecorder.stop();
+            recognition?.stop();
+            recordBtn.innerHTML = "녹화";
+            recordBtn.title = "녹화 시작";
+            recordBtn.classList.remove("recording");
+            saveBtn.disabled = false;
+            pauseBtn.disabled = true;
+            pauseBtn.innerHTML = "⏸️";
+            isPaused = false;
+            stopTimer();
+
+        } else {
+            // --- 녹화 시작 로직 (즉시 시작) ---
+            recordedChunks = [];
+            mediaRecorder = new MediaRecorder(stream);
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) recordedChunks.push(event.data);
+            };
+            
+            // 녹화와 음성인식 즉시 시작
+            mediaRecorder.start();
+            recognition?.start();
+            
+            fullTranscript = "";
+            transcriptBox.textContent = "음성 인식이 여기에 표시됩니다...";
+            recordBtn.innerHTML = "종료";
+            recordBtn.title = "녹화 종료";
+            recordBtn.classList.add("recording");
+            saveBtn.disabled = true;
+            pauseBtn.disabled = false;
+
+            seconds = 0;
+            timerDisplay.textContent = "00:00";
+            startTimer();
+        }
+    });
+
+    // --- ★★★ 수정된 부분: 저장 버튼 (즉시 다운로드) ★★★ ---
+    saveBtn.addEventListener("click", () => {
+        if (recordedChunks.length === 0) {
+            alert("저장할 영상 데이터가 없습니다.");
+            return;
+        }
+        
+        const blob = new Blob(recordedChunks, { type: "video/webm" });
+        const url = URL.createObjectURL(blob);
+ 
+        const a = document.createElement("a");
+        
+        // 파일명 생성
+        const department = document.getElementById("department").value || "면접연습";
+        const date = new Date().toISOString().slice(0, 10);
+        let questionText = questionSelect.options[questionSelect.selectedIndex].text.substring(3); // "가. " 부분 제거
+        if (questionSelect.value === 'custom') {
+            questionText = customQuestionInput.value || "직접입력질문";
+        }
+        a.download = `${date}_${department}_${questionText}.webm`;
+
+        // 즉시 다운로드 실행
+        a.href = url;
+        document.body.appendChild(a);
+        a.click();
+        
+        // 생성된 요소 정리
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        alert("영상 다운로드가 시작됩니다!");
+        saveBtn.disabled = true; // 저장 후 비활성화
+    });
+
+    // 질문 선택 박스
+    questionSelect.addEventListener("change", () => {
+        customQuestionInput.style.display = questionSelect.value === "custom" ? "block" : "none";
+    });
+
+    // 답변 복사 버튼
+    copyBtn.addEventListener('click', () => {
+        if (!fullTranscript) {
+            alert('복사할 답변 내용이 없습니다.');
+            return;
+        }
+        let currentQuestion = questionSelect.options[questionSelect.selectedIndex].text;
+        if (questionSelect.value === "custom") {
+            currentQuestion = customQuestionInput.value || "(직접 입력한 질문)";
+        }
+        
+        const textToCopy = `[면접 질문]\n${currentQuestion}\n\n[학생 답변]\n${fullTranscript}`;
+        
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            copyBtn.textContent = '✅ 복사 완료!';
+            setTimeout(() => { copyBtn.textContent = '📋 답변 복사'; }, 2000);
+        }).catch(err => {
+            console.error('복사 실패:', err);
+            alert('답변을 복사하는 데 실패했습니다.');
+        });
+    });
+
+    // 페이지 로드 시 웹캠 설정
+    window.addEventListener("load", setupWebcam);
+</script>
+</body>
+</html>
