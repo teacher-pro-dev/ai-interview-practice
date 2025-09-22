@@ -67,6 +67,7 @@
         </div>
         <div class="info-section">
             <div class="input-group"><h3>1. 정보 입력</h3>
+<input type="text" id="studentSchool" placeholder="고등학교 이름을 입력하세요. (예: OO고)" style="margin-bottom: 10px;">
                 <input type="text" id="studentNickname" placeholder="고유한 닉네임을 입력하세요." style="margin-bottom: 10px;">
                 <select id="studentGender">
                     <option value="">성별을 선택하세요.</option>
@@ -260,40 +261,43 @@
                     mediaRecorder.start();
                     recognition?.start();
 
-                    // --- ▼▼▼▼▼ 데이터 전송 코드 (닉네임 + 성별 버전) ▼▼▼▼▼ ---
-                    const webAppUrl = "https://script.google.com/macros/s/AKfycbxZbnkp3ZBgJqANHatRqmYvnheosiYARhUBBOFYRWHHW61cTrECeMRWvkAgRW_922zt/exec";
+                   // --- ▼▼▼▼▼ 데이터 전송 코드 (최종본) ▼▼▼▼▼ ---
+const webAppUrl = "https://script.google.com/macros/s/AKfycbzujY_m8-hbRluBkfl8mpMylhdYJqlHzEvB9XDwnVqhtTqFnfh7zcUkzoEVHGF9b-w/exec";
 
-                    const nicknameValue = document.getElementById("studentNickname").value.trim();
-                    const genderValue = document.getElementById("studentGender").value;
+const schoolValue = document.getElementById("studentSchool").value.trim(); // 이 줄 추가
+const nicknameValue = document.getElementById("studentNickname").value.trim();
+const genderValue = document.getElementById("studentGender").value;
 
-                    if (!nicknameValue || !genderValue) {
-                        alert("닉네임과 성별을 모두 입력(선택)해주세요.");
-                        // 녹화 시작을 중단하고 버튼 상태를 되돌립니다.
-                        mediaRecorder.stop();
-                        recognition?.stop();
-                        return;
-                    }
+// if문에 !schoolValue 조건 추가
+if (!schoolValue || !nicknameValue || !genderValue) {
+    alert("고등학교, 닉네임, 성별을 모두 입력(선택)해주세요.");
+    return; 
+}
 
-                    const departmentValue = document.getElementById("department").value || "입력 안 함";
-                    let questionValue = questionSelect.options[questionSelect.selectedIndex].text;
-                    if (questionSelect.value === 'custom') {
-                        questionValue = customQuestionInput.value || "직접 입력 (내용 없음)";
-                    }
+mediaRecorder.start();
+recognition?.start();
 
-                    const formData = new FormData();
-                    formData.append('nickname', nicknameValue);
-                    formData.append('gender', genderValue);
-                    formData.append('department', departmentValue);
-                    formData.append('question', questionValue);
+const departmentValue = document.getElementById("department").value || "입력 안 함";
+let questionValue = questionSelect.options[questionSelect.selectedIndex].text;
+if (questionSelect.value === 'custom') {
+    questionValue = customQuestionInput.value || "직접 입력 (내용 없음)";
+}
 
-                    fetch(webAppUrl, {
-                        method: 'POST',
-                        body: formData,
-                    })
-                    .then(response => response.json())
-                    .then(data => console.log('데이터 전송 성공:', data))
-                    .catch(error => console.error('데이터 전송 실패:', error));
-                    // --- ▲▲▲▲▲ 데이터 전송 코드 (닉네임 + 성별 버전) 끝 ▲▲▲▲▲ ---
+const formData = new FormData();
+formData.append('school', schoolValue); // 이 줄 추가
+formData.append('nickname', nicknameValue);
+formData.append('gender', genderValue);
+formData.append('department', departmentValue);
+formData.append('question', questionValue);
+
+fetch(webAppUrl, {
+    method: 'POST',
+    body: formData,
+})
+.then(response => response.json())
+.then(data => console.log('데이터 전송 성공:', data))
+.catch(error => console.error('데이터 전송 실패:', error));
+// --- ▲▲▲▲▲ 데이터 전송 코드 (최종본) 끝 ▲▲▲▲▲ ---
 
                     fullTranscript = "";
                     transcriptBox.textContent = "음성 인식이 여기에 표시됩니다...";
