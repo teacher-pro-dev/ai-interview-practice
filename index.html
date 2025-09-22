@@ -105,7 +105,7 @@
     const countdownDisplay = document.getElementById("countdown");
     const transcriptBox = document.getElementById("transcriptBox");
     const copyBtn = document.getElementById("copyBtn");
-    
+
     // --- 2. 상태 변수 및 객체 초기화 ---
     let stream;
     let mediaRecorder;
@@ -115,7 +115,7 @@
     let timerInterval = null;
     let seconds = 0;
     let fullTranscript = "";
-    
+
     // 음성 인식 API 설정
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition;
@@ -144,6 +144,17 @@
             transcriptBox.textContent = `음성 인식 오류: ${event.error}. 크롬 브라우저를 이용해 보세요.`;
             console.error("Speech recognition error:", event.error);
         };
+
+        // ★★★★★★★★★★★★★★★★★★★★★★★★
+        // ★★★ 갤럭시 기기 호환성 문제 해결을 위해 추가된 코드 ★★★
+        // ★★★★★★★★★★★★★★★★★★★★★★★★
+        recognition.onend = () => {
+            // 녹화가 진행 중이고, 일시정지 상태가 아닐 때만 음성 인식을 다시 시작합니다.
+            if (mediaRecorder && mediaRecorder.state === "recording" && !isPaused) {
+                recognition.start();
+            }
+        };
+
     } else {
         transcriptBox.textContent = "현재 브라우저에서는 음성 인식을 지원하지 않습니다.";
     }
@@ -191,21 +202,23 @@
         webcamVideo.style.transform = isFlipped ? "scaleX(1)" : "scaleX(-1)";
     });
 
-    // --- ★★★ 수정된 부분: 일시 정지 버튼 (음성인식 유지) ★★★ ---
+    // --- ★★★ 수정된 부분: 일시 정지 버튼 ★★★ ---
     pauseBtn.addEventListener("click", () => {
         if (!mediaRecorder) return;
 
         if (isPaused) {
             // 정지 상태 -> 다시 시작
             mediaRecorder.resume();
-            startTimer(); // 타이머만 다시 시작
+            recognition?.start();
+            startTimer();
            
             pauseBtn.innerHTML = "⏸️";
             pauseBtn.title = "일시 정지";
         } else {
             // 녹화 상태 -> 일시 정지
             mediaRecorder.pause();
-            stopTimer(); // 타이머만 일시 정지
+            recognition?.stop();
+            stopTimer();
 
             pauseBtn.innerHTML = "▶️";
             pauseBtn.title = "녹화 재개";
@@ -213,10 +226,10 @@
         isPaused = !isPaused;
     });
 
-    // 녹화 시작/종료 버튼 (카운트다운 제거 버전)
+    // 녹화 시작/종료 버튼
     recordBtn.addEventListener("click", () => {
         if (mediaRecorder && mediaRecorder.state === "recording") {
-            // --- 녹화 종료 로직 (기존과 동일) ---
+            // 녹화 종료 로직
             mediaRecorder.stop();
             recognition?.stop();
             recordBtn.innerHTML = "녹화";
@@ -224,33 +237,48 @@
             recordBtn.classList.remove("recording");
             saveBtn.disabled = false;
             pauseBtn.disabled = true;
-            pauseBtn.innerHTML = "⏸️";
+            pauseBtn.innerHTML = "⏸️"; // 아이콘 초기화
             isPaused = false;
             stopTimer();
 
         } else {
-            // --- 녹화 시작 로직 (즉시 시작) ---
-            recordedChunks = [];
-            mediaRecorder = new MediaRecorder(stream);
-            mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) recordedChunks.push(event.data);
-            };
-            
-            // 녹화와 음성인식 즉시 시작
-            mediaRecorder.start();
-            recognition?.start();
-            
-            fullTranscript = "";
-            transcriptBox.textContent = "음성 인식이 여기에 표시됩니다...";
-            recordBtn.innerHTML = "종료";
-            recordBtn.title = "녹화 종료";
-            recordBtn.classList.add("recording");
-            saveBtn.disabled = true;
-            pauseBtn.disabled = false;
+            // 녹화 시작 로직
+            let countdown = 3;
+            countdownDisplay.style.display = "block";
+            countdownDisplay.textContent = countdown;
+            recordBtn.disabled = true;
 
-            seconds = 0;
-            timerDisplay.textContent = "00:00";
-            startTimer();
+            const countdownInterval = setInterval(() => {
+                countdown--;
+                if (countdown > 0) {
+                    countdownDisplay.textContent = countdown;
+                } else {
+                    clearInterval(countdownInterval);
+                    countdownDisplay.style.display = "none";
+                    
+                    recordBtn.disabled = false;
+                    recordedChunks = [];
+                    mediaRecorder = new MediaRecorder(stream);
+                    mediaRecorder.ondataavailable = (event) => {
+                        if (event.data.size > 0) recordedChunks.push(event.data);
+                    };
+                    
+                    mediaRecorder.start();
+                    recognition?.start();
+                    
+                    fullTranscript = "";
+                    transcriptBox.textContent = "음성 인식이 여기에 표시됩니다...";
+                    recordBtn.innerHTML = "종료";
+                    recordBtn.title = "녹화 종료";
+                    recordBtn.classList.add("recording");
+                    saveBtn.disabled = true;
+                    pauseBtn.disabled = false;
+
+                    seconds = 0;
+                    timerDisplay.textContent = "00:00";
+                    startTimer();
+                }
+            }, 1000);
         }
     });
 
