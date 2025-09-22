@@ -359,7 +359,24 @@
         });
     });
 
-    window.addEventListener("load", setupWebcam);
+    // --- ▼▼▼▼▼ 페이지 로드 시 참여 코드 확인 기능 ▼▼▼▼▼ ---
+    window.addEventListener("load", () => {
+        // 1. 선생님께서 설정하실 참여 코드를 여기에 입력하세요.
+        const participationCode = "interview2025"; 
+        
+        const enteredCode = prompt("프로그램 참여 코드를 입력하세요:", "");
+
+        // 2. 입력된 코드와 설정된 코드가 일치하는지 확인합니다.
+        if (enteredCode === participationCode) {
+            // 코드가 일치하면 웹캠을 설정하고 프로그램을 시작합니다.
+            setupWebcam(); 
+        } else {
+            // 코드가 틀리면 경고 메시지를 보여주고 페이지 내용을 숨깁니다.
+            alert("참여 코드가 올바르지 않습니다. 사전 설문 완료 후 받은 코드를 확인해주세요.");
+            document.body.innerHTML = "<h1>접근 권한이 없습니다.</h1><p>사전 설문조사를 먼저 완료해주세요.</p>";
+        }
+    });
+
 </script>
 </body>
 </html>
