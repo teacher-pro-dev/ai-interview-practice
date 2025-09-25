@@ -35,6 +35,7 @@
         .feedback-guide p { margin: 10px 0; font-size: 0.9em; }
         .feedback-guide a { display: block; text-align: center; padding: 15px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 1.1em; background-color: #333; color: white; transition: background-color 0.2s; }
         .feedback-guide a:hover { background-color: #555; }
+        .search-guide { margin-top: 12px; padding: 10px; background-color: #F0F4F8; border-radius: 6px; font-size: 0.85em; color: #555; line-height: 1.6; }
         @media (max-width: 900px) {
             body { height: auto; padding: 10px 0; }
             .container { flex-direction: column; height: auto; max-height: none; width: 95%; }
@@ -75,7 +76,20 @@
                     <option value="여">여성</option>
                 </select>
             </div>
-            <div class="input-group"><h3>2. 희망 학과</h3><input type="text" id="department" placeholder="예) 인공지능학과"></div>
+            <div class="input-group">
+                <h3>2. 지원 대학교 및 학과</h3>
+                <input type="text" id="university" placeholder="예) OO대학교" style="margin-bottom: 10px;">
+                <input type="text" id="department" placeholder="예) 인공지능학과">
+                <button id="searchQuestionsBtn" style="width: 100%; padding: 10px; margin-top: 10px; background-color: #4A90E2; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 0.95em;">
+                    🔎 대학교 선행학습 영향평가 확인하기
+                </button>
+                <div class="search-guide">
+                    <strong>[이용 안내]</strong><br>
+                    1. 위에 지원 대학명 입력 후 버튼을 클릭하세요.<br>
+                    2. '어디가' 사이트에서 다시 대학명을 검색하고 클릭하세요.<br>
+                    3. '선행학습 영향평가' 탭에서 보고서를 다운받으세요.
+                </div>
+            </div>
             <div class="input-group">
                 <h3>3. 면접 질문</h3>
                 <select id="questionSelect">
@@ -114,6 +128,7 @@
     const countdownDisplay = document.getElementById("countdown");
     const transcriptBox = document.getElementById("transcriptBox");
     const copyBtn = document.getElementById("copyBtn");
+    const searchQuestionsBtn = document.getElementById('searchQuestionsBtn');
     
     // --- 2. 상태 변수 및 객체 초기화 ---
     let stream;
@@ -137,11 +152,11 @@
 
         recognition.onresult = (event) => {
             let interimTranscript = "";
-            let finalTranscript = "";
-            for (let i = 0; i < event.results.length; i++) {
+            let finalTranscript = fullTranscript; // 이전 최종 결과를 유지
+            for (let i = event.resultIndex; i < event.results.length; i++) {
                 const transcript = event.results[i][0].transcript;
                 if (event.results[i].isFinal) {
-                    finalTranscript += transcript;
+                    finalTranscript += transcript + ' ';
                 } else {
                     interimTranscript += transcript;
                 }
@@ -151,8 +166,16 @@
         };
         
         recognition.onerror = (event) => {
-            transcriptBox.textContent = `음성 인식 오류: ${event.error}. 크롬 브라우저를 이용해 보세요.`;
-            console.error("Speech recognition error:", event.error);
+            let errorMessage = `음성 인식 오류: ${event.error}.`;
+            if (event.error === 'network') {
+                errorMessage += " 인터넷 연결을 확인해주세요.";
+            } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                errorMessage += " 마이크 권한이 차단되었습니다. 브라우저 설정을 확인해주세요.";
+            } else {
+                errorMessage += " 크롬 브라우저 사용을 권장합니다.";
+            }
+            transcriptBox.textContent = errorMessage;
+            console.error("Speech recognition error:", event);
         };
     } else {
         transcriptBox.textContent = "현재 브라우저에서는 음성 인식을 지원하지 않습니다.";
@@ -161,10 +184,27 @@
     // --- 3. 핵심 기능 함수 ---
     async function setupWebcam() {
         try {
-            stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            const constraints = { 
+                video: {
+                    facingMode: 'user' // 전면 카메라 우선
+                }, 
+                audio: {
+                    echoCancellation: true, // 에코 캔슬링 기능 활성화
+                    noiseSuppression: true // 노이즈 억제 기능 활성화
+                } 
+            };
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
             webcamVideo.srcObject = stream;
         } catch (err) {
-            alert("카메라와 마이크에 접근할 수 없습니다. 권한을 확인해주세요.");
+            let message = "카메라와 마이크에 접근할 수 없습니다.\n";
+            if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+                message += "브라우저 설정에서 카메라와 마이크 권한을 허용해주세요.";
+            } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+                message += "연결된 카메라나 마이크 장치가 없습니다.";
+            } else {
+                message += "오류가 발생했습니다: " + err.name;
+            }
+            alert(message);
             console.error("Error accessing media devices.", err);
         }
     }
@@ -188,6 +228,35 @@
         timerInterval = null;
     }
 
+    async function sendDataToServer() {
+        // 이 함수는 현재 로직상 변경이 필요 없습니다.
+        const webAppUrl = "https://script.google.com/macros/s/AKfycbwq_4sO5v0hxlvnoRN82cUpkOcE7XjrpoBaVUbTvdB1G9fuQufDw0jcym0gwBlKF0vw/exec";
+        const schoolValue = document.getElementById("studentSchool").value.trim();
+        const nicknameValue = document.getElementById("studentNickname").value.trim();
+        const genderValue = document.getElementById("studentGender").value;
+        let questionValue = questionSelect.options[questionSelect.selectedIndex].text;
+        if (questionSelect.value === 'custom') {
+            questionValue = customQuestionInput.value || "직접 입력 (내용 없음)";
+        }
+        const formData = new FormData();
+        formData.append('school', schoolValue);
+        formData.append('nickname', nicknameValue);
+        formData.append('gender', genderValue);
+        formData.append('question', questionValue);
+        formData.append('transcript', fullTranscript || "답변 내용 없음");
+        try {
+            const response = await fetch(webAppUrl, {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await response.json();
+            console.log('데이터 전송 성공:', data);
+        } catch (error) {
+            console.error('데이터 전송 실패:', error);
+            alert('답변 제출에 실패했습니다. 인터넷 연결을 확인 후 다시 시도해주세요.');
+        }
+    }
+
     // --- 4. 이벤트 리스너 연결 ---
     flipBtn.addEventListener("click", () => {
         isFlipped = !isFlipped;
@@ -196,10 +265,9 @@
 
     pauseBtn.addEventListener("click", () => {
         if (!mediaRecorder) return;
-
         if (isPaused) {
             mediaRecorder.resume();
-            recognition?.start();
+            if (recognition && recognition.state !== 'recognizing') recognition.start();
             startTimer();
             pauseBtn.innerHTML = "⏸️";
             pauseBtn.title = "일시 정지";
@@ -217,15 +285,15 @@
         if (mediaRecorder && mediaRecorder.state === "recording") {
             mediaRecorder.stop();
             recognition?.stop();
-            recordBtn.innerHTML = "녹화";
-            recordBtn.title = "녹화 시작";
-            recordBtn.classList.remove("recording");
-            saveBtn.disabled = false;
-            pauseBtn.disabled = true;
-            pauseBtn.innerHTML = "⏸️";
-            isPaused = false;
-            stopTimer();
         } else {
+            const schoolValue = document.getElementById("studentSchool").value.trim();
+            const nicknameValue = document.getElementById("studentNickname").value.trim();
+            const genderValue = document.getElementById("studentGender").value;
+            if (!schoolValue || !nicknameValue || !genderValue) {
+                alert("1번 정보 입력의 고등학교, 닉네임, 성별을 모두 입력(선택)해주세요.");
+                return;
+            }
+
             let countdown = 3;
             countdownDisplay.style.display = "block";
             countdownDisplay.textContent = countdown;
@@ -239,71 +307,71 @@
                     clearInterval(countdownInterval);
                     countdownDisplay.style.display = "none";
                     recordBtn.disabled = false;
-                    
-                    recordedChunks = [];
-                    mediaRecorder = new MediaRecorder(stream);
-
-                    mediaRecorder.ondataavailable = (event) => {
-                        if (event.data.size > 0) recordedChunks.push(event.data);
-                    };
-                    
-                    // --- ▼▼▼▼▼ 데이터 전송 코드 (URL 적용 완료) ▼▼▼▼▼ ---
-                    const webAppUrl = "https://script.google.com/macros/s/AKfycbwq_4sO5v0hxlvnoRN82cUpkOcE7XjrpoBaVUbTvdB1G9fuQufDw0jcym0gwBlKF0vw/exec";
-
-                    const schoolValue = document.getElementById("studentSchool").value.trim();
-                    const nicknameValue = document.getElementById("studentNickname").value.trim();
-                    const genderValue = document.getElementById("studentGender").value;
-
-                    // 1. 유효성 검사를 가장 먼저 실행합니다.
-                    if (!schoolValue || !nicknameValue || !genderValue) {
-                        alert("고등학교, 닉네임, 성별을 모두 입력(선택)해주세요.");
-                        recordBtn.disabled = false;
-                        return; 
-                    }
-
-                    // 2. 유효성 검사를 통과한 경우에만 녹화와 음성 인식을 시작합니다.
-                    mediaRecorder.start();
-                    recognition?.start();
-
-                    const departmentValue = document.getElementById("department").value || "입력 안 함";
-                    let questionValue = questionSelect.options[questionSelect.selectedIndex].text;
-                    if (questionSelect.value === 'custom') {
-                        questionValue = customQuestionInput.value || "직접 입력 (내용 없음)";
-                    }
-
-                    const formData = new FormData();
-                    formData.append('school', schoolValue);
-                    formData.append('nickname', nicknameValue);
-                    formData.append('gender', genderValue);
-                    formData.append('department', departmentValue);
-                    formData.append('question', questionValue);
-
-                    // 3. 데이터 전송을 실행합니다.
-                    fetch(webAppUrl, {
-                        method: 'POST',
-                        body: formData,
-                    })
-                    .then(response => response.json())
-                    .then(data => console.log('데이터 전송 성공:', data))
-                    .catch(error => console.error('데이터 전송 실패:', error));
-                    // --- ▲▲▲▲▲ 데이터 전송 코드 (URL 적용 완료) 끝 ▲▲▲▲▲ ---
-                    
-                    fullTranscript = "";
-                    transcriptBox.textContent = "음성 인식이 여기에 표시됩니다...";
-                    recordBtn.innerHTML = "종료";
-                    recordBtn.title = "녹화 종료";
-                    recordBtn.classList.add("recording");
-                    
-                    saveBtn.disabled = true;
-                    pauseBtn.disabled = false;
-
-                    seconds = 0;
-                    timerDisplay.textContent = "00:00";
-                    startTimer();
+                    startRecording(); // 녹화 시작 함수 호출
                 }
             }, 1000);
         }
     });
+
+    // --- ▼▼▼▼▼ [수정] 녹화 시작 로직을 별도 함수로 분리 ▼▼▼▼▼ ---
+    function startRecording() {
+        recordedChunks = [];
+        
+        // --- ▼▼▼ [핵심 수정] 안드로이드 호환성을 위한 MIME 타입 지정 ---
+        const options = {
+            mimeType: 'video/webm; codecs=vp8, opus'
+        };
+        
+        try {
+            if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                console.warn(`MIME 타입 ${options.mimeType}은(는) 지원되지 않습니다. 기본 설정으로 시도합니다.`);
+                delete options.mimeType; // 지원하지 않으면 기본값으로
+            }
+            mediaRecorder = new MediaRecorder(stream, options);
+        } catch (e) {
+            console.error("MediaRecorder 생성 실패:", e);
+            alert("녹화 시작에 실패했습니다. 브라우저가 녹화 기능을 지원하지 않을 수 있습니다.");
+            return;
+        }
+        // --- ▲▲▲ 여기까지 핵심 수정 ▲▲▲ ---
+
+        mediaRecorder.ondataavailable = (event) => {
+            if (event.data.size > 0) recordedChunks.push(event.data);
+        };
+        
+        mediaRecorder.onstop = () => {
+            console.log("녹화가 중지되어 데이터 전송을 시작합니다.");
+            sendDataToServer();
+            
+            // UI 상태 업데이트
+            recordBtn.innerHTML = "녹화";
+            recordBtn.title = "녹화 시작";
+            recordBtn.classList.remove("recording");
+            saveBtn.disabled = false;
+            pauseBtn.disabled = true;
+            pauseBtn.innerHTML = "⏸️";
+            isPaused = false;
+            stopTimer();
+        };
+
+        mediaRecorder.start();
+        if (recognition) {
+            fullTranscript = ""; // 새 녹화 시작 시 텍스트 초기화
+            transcriptBox.textContent = "음성 인식이 여기에 표시됩니다...";
+            recognition.start();
+        }
+        
+        // UI 상태 업데이트
+        recordBtn.innerHTML = "종료";
+        recordBtn.title = "녹화 종료";
+        recordBtn.classList.add("recording");
+        saveBtn.disabled = true;
+        pauseBtn.disabled = false;
+        seconds = 0;
+        timerDisplay.textContent = "00:00";
+        startTimer();
+    }
+    // --- ▲▲▲▲▲ 여기까지 수정 ▲▲▲▲▲ ---
 
     saveBtn.addEventListener("click", () => {
         if (recordedChunks.length === 0) {
@@ -319,7 +387,7 @@
         const date = new Date().toISOString().slice(0, 10);
         let questionText = questionSelect.options[questionSelect.selectedIndex].text.substring(3);
         if (questionSelect.value === 'custom') {
-            questionText = customQuestionInput.value || "직접입력질문";
+            questionText = customQuestionInput.value.replace(/[^a-zA-Z0-9가-힣]/g, '').substring(0, 10) || "직접입력";
         }
         a.download = `${date}_${department}_${questionText}.webm`;
 
@@ -355,24 +423,51 @@
             setTimeout(() => { copyBtn.textContent = '📋 답변 복사'; }, 2000);
         }).catch(err => {
             console.error('복사 실패:', err);
-            alert('답변을 복사하는 데 실패했습니다.');
+            // 구형 브라우저나 http 환경을 위한 대체 복사 로직
+            const textArea = document.createElement('textarea');
+            textArea.value = textToCopy;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                copyBtn.textContent = '✅ 복사 완료!';
+                setTimeout(() => { copyBtn.textContent = '📋 답변 복사'; }, 2000);
+            } catch (e) {
+                alert('답변을 복사하는 데 실패했습니다.');
+            }
+            document.body.removeChild(textArea);
         });
     });
 
-    // --- ▼▼▼▼▼ 페이지 로드 시 참여 코드 확인 기능 ▼▼▼▼▼ ---
-    window.addEventListener("load", () => {
-        // 1. 선생님께서 설정하실 참여 코드를 여기에 입력하세요.
-        const participationCode = "interview2025"; 
+    searchQuestionsBtn.addEventListener('click', () => {
+        const universityName = document.getElementById('university').value.trim();
+        if (!universityName) {
+            alert('먼저 대학교 이름을 입력해주세요.');
+            return;
+        }
         
-        const enteredCode = prompt("프로그램 참여 코드를 입력하세요:", "");
+        const adigaUrl = 'https://www.adiga.kr/ucp/uvt/uni/univView.do?menuId=PCUVTINF2000';
+        window.open(adigaUrl, '_blank');
+    });
 
-        // 2. 입력된 코드와 설정된 코드가 일치하는지 확인합니다.
+    // --- 페이지 로드 시 참여 코드 확인 기능 ---
+    window.addEventListener("load", () => {
+        const participationCode = "interview2025";
+        
+        // --- [개선] URL 파라미터로 코드 자동 입력 기능 추가 ---
+        const urlParams = new URLSearchParams(window.location.search);
+        const codeFromUrl = urlParams.get('code');
+        
+        const enteredCode = codeFromUrl || prompt("프로그램 참여 코드를 입력하세요:", "");
+
         if (enteredCode === participationCode) {
-            // 코드가 일치하면 웹캠을 설정하고 프로그램을 시작합니다.
-            setupWebcam(); 
+            setupWebcam();
         } else {
-            // 코드가 틀리면 경고 메시지를 보여주고 페이지 내용을 숨깁니다.
-            alert("참여 코드가 올바르지 않습니다. 사전 설문 완료 후 받은 코드를 확인해주세요.");
+            if (codeFromUrl) { // URL 코드가 틀렸을 경우
+                alert("URL에 포함된 참여 코드가 올바르지 않습니다.");
+            } else { // 직접 입력한 코드가 틀렸을 경우
+                alert("참여 코드가 올바르지 않습니다. 사전 설문 완료 후 받은 코드를 확인해주세요.");
+            }
             document.body.innerHTML = "<h1>접근 권한이 없습니다.</h1><p>사전 설문조사를 먼저 완료해주세요.</p>";
         }
     });
