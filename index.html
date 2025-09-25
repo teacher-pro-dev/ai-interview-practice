@@ -139,58 +139,64 @@
     let timerInterval = null;
     let seconds = 0;
     let fullTranscript = "";
-    
-    // 음성 인식 API 설정
+    let isRecording = false; // <<< [추가] 녹화 상태를 명확히 추적하는 변수
+
+    // --- ▼▼▼▼▼ [핵심 수정] 음성 인식 API 설정 (안정성 강화 버전) ▼▼▼▼▼ ---
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     let recognition;
 
     if (SpeechRecognition) {
         recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
+        recognition.interimResults = true; // 중간 결과는 계속 받아옴
         recognition.lang = "ko-KR";
+        recognition.continuous = false; // '짧게' 인식하고 자동 종료되도록 변경
 
+        // 음성 인식 결과가 있을 때
         recognition.onresult = (event) => {
             let interimTranscript = "";
-            let finalTranscript = fullTranscript; // 이전 최종 결과를 유지
             for (let i = event.resultIndex; i < event.results.length; i++) {
                 const transcript = event.results[i][0].transcript;
                 if (event.results[i].isFinal) {
-                    finalTranscript += transcript + ' ';
+                    fullTranscript += transcript + ' ';
                 } else {
                     interimTranscript += transcript;
                 }
             }
-            transcriptBox.innerHTML = finalTranscript + '<i style="color:#999;">' + interimTranscript + "</i>";
-            fullTranscript = finalTranscript.trim();
+            transcriptBox.innerHTML = fullTranscript + '<i style="color:#999;">' + interimTranscript + "</i>";
+        };
+
+        // 음성 인식이 '종료될 때마다' 호출되는 이벤트
+        recognition.onend = () => {
+            // isRecording 플래그를 확인하여, 사용자가 '종료' 버튼을 누른게 아니라면
+            // 인식을 즉시 다시 시작해서 계속 이어가는 효과를 냄
+            if (isRecording && !isPaused) {
+                recognition.start();
+            }
         };
         
         recognition.onerror = (event) => {
-            let errorMessage = `음성 인식 오류: ${event.error}.`;
-            if (event.error === 'network') {
-                errorMessage += " 인터넷 연결을 확인해주세요.";
-            } else if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
-                errorMessage += " 마이크 권한이 차단되었습니다. 브라우저 설정을 확인해주세요.";
-            } else {
-                errorMessage += " 크롬 브라우저 사용을 권장합니다.";
-            }
-            transcriptBox.textContent = errorMessage;
+            // 오류가 발생해도 onend가 호출되므로, 여기서는 콘솔에 로그만 남김
             console.error("Speech recognition error:", event);
         };
+
     } else {
         transcriptBox.textContent = "현재 브라우저에서는 음성 인식을 지원하지 않습니다.";
     }
+    // --- ▲▲▲▲▲ 여기까지 핵심 수정 ▲▲▲▲▲ ---
+
 
     // --- 3. 핵심 기능 함수 ---
     async function setupWebcam() {
         try {
             const constraints = { 
                 video: {
-                    facingMode: 'user' // 전면 카메라 우선
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    facingMode: 'user'
                 }, 
                 audio: {
-                    echoCancellation: true, // 에코 캔슬링 기능 활성화
-                    noiseSuppression: true // 노이즈 억제 기능 활성화
+                    echoCancellation: true,
+                    noiseSuppression: true
                 } 
             };
             stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -202,7 +208,7 @@
             } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
                 message += "연결된 카메라나 마이크 장치가 없습니다.";
             } else {
-                message += "오류가 발생했습니다: " + err.name;
+                message += `오류가 발생했습니다: ${err.name}.`;
             }
             alert(message);
             console.error("Error accessing media devices.", err);
@@ -229,7 +235,6 @@
     }
 
     async function sendDataToServer() {
-        // 이 함수는 현재 로직상 변경이 필요 없습니다.
         const webAppUrl = "https://script.google.com/macros/s/AKfycbwq_4sO5v0hxlvnoRN82cUpkOcE7XjrpoBaVUbTvdB1G9fuQufDw0jcym0gwBlKF0vw/exec";
         const schoolValue = document.getElementById("studentSchool").value.trim();
         const nicknameValue = document.getElementById("studentNickname").value.trim();
@@ -243,14 +248,9 @@
         formData.append('nickname', nicknameValue);
         formData.append('gender', genderValue);
         formData.append('question', questionValue);
-        formData.append('transcript', fullTranscript || "답변 내용 없음");
+        formData.append('transcript', fullTranscript.trim() || "답변 내용 없음");
         try {
-            const response = await fetch(webAppUrl, {
-                method: 'POST',
-                body: formData,
-            });
-            const data = await response.json();
-            console.log('데이터 전송 성공:', data);
+            await fetch(webAppUrl, { method: 'POST', body: formData });
         } catch (error) {
             console.error('데이터 전송 실패:', error);
             alert('답변 제출에 실패했습니다. 인터넷 연결을 확인 후 다시 시도해주세요.');
@@ -265,27 +265,30 @@
 
     pauseBtn.addEventListener("click", () => {
         if (!mediaRecorder) return;
+        isPaused = !isPaused; // isPaused 상태 먼저 변경
         if (isPaused) {
-            mediaRecorder.resume();
-            if (recognition && recognition.state !== 'recognizing') recognition.start();
-            startTimer();
-            pauseBtn.innerHTML = "⏸️";
-            pauseBtn.title = "일시 정지";
-        } else {
             mediaRecorder.pause();
-            recognition?.stop();
             stopTimer();
             pauseBtn.innerHTML = "▶️";
             pauseBtn.title = "녹화 재개";
+            if (recognition) recognition.stop(); // 일시정지 시 인식 중단
+        } else {
+            mediaRecorder.resume();
+            startTimer();
+            pauseBtn.innerHTML = "⏸️";
+            pauseBtn.title = "일시 정지";
+            if (recognition) recognition.start(); // 재개 시 인식 다시 시작
         }
-        isPaused = !isPaused;
     });
 
     recordBtn.addEventListener("click", () => {
-        if (mediaRecorder && mediaRecorder.state === "recording") {
+        if (isRecording) {
+            // 녹화 종료 로직
+            isRecording = false; // <<< [수정] 상태 플래그 먼저 변경
             mediaRecorder.stop();
-            recognition?.stop();
+            if (recognition) recognition.stop();
         } else {
+            // 녹화 시작 전 정보 확인
             const schoolValue = document.getElementById("studentSchool").value.trim();
             const nicknameValue = document.getElementById("studentNickname").value.trim();
             const genderValue = document.getElementById("studentGender").value;
@@ -294,6 +297,7 @@
                 return;
             }
 
+            // 카운트다운 후 녹화 시작
             let countdown = 3;
             countdownDisplay.style.display = "block";
             countdownDisplay.textContent = countdown;
@@ -307,40 +311,36 @@
                     clearInterval(countdownInterval);
                     countdownDisplay.style.display = "none";
                     recordBtn.disabled = false;
-                    startRecording(); // 녹화 시작 함수 호출
+                    startRecording(); // 실제 녹화 시작 함수 호출
                 }
             }, 1000);
         }
     });
 
-    // --- ▼▼▼▼▼ [수정] 녹화 시작 로직을 별도 함수로 분리 ▼▼▼▼▼ ---
     function startRecording() {
+        isRecording = true; // <<< [수정] 녹화 시작 시 상태 플래그 true
+        isPaused = false;
         recordedChunks = [];
+        fullTranscript = "";
+        transcriptBox.innerHTML = "음성 인식이 여기에 표시됩니다...";
         
-        // --- ▼▼▼ [핵심 수정] 안드로이드 호환성을 위한 MIME 타입 지정 ---
-        const options = {
-            mimeType: 'video/webm; codecs=vp8, opus'
-        };
-        
+        const options = { mimeType: 'video/webm; codecs=vp8, opus' };
         try {
             if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-                console.warn(`MIME 타입 ${options.mimeType}은(는) 지원되지 않습니다. 기본 설정으로 시도합니다.`);
-                delete options.mimeType; // 지원하지 않으면 기본값으로
+                delete options.mimeType;
             }
             mediaRecorder = new MediaRecorder(stream, options);
         } catch (e) {
-            console.error("MediaRecorder 생성 실패:", e);
             alert("녹화 시작에 실패했습니다. 브라우저가 녹화 기능을 지원하지 않을 수 있습니다.");
+            isRecording = false;
             return;
         }
-        // --- ▲▲▲ 여기까지 핵심 수정 ▲▲▲ ---
 
         mediaRecorder.ondataavailable = (event) => {
             if (event.data.size > 0) recordedChunks.push(event.data);
         };
         
         mediaRecorder.onstop = () => {
-            console.log("녹화가 중지되어 데이터 전송을 시작합니다.");
             sendDataToServer();
             
             // UI 상태 업데이트
@@ -350,16 +350,11 @@
             saveBtn.disabled = false;
             pauseBtn.disabled = true;
             pauseBtn.innerHTML = "⏸️";
-            isPaused = false;
             stopTimer();
         };
 
         mediaRecorder.start();
-        if (recognition) {
-            fullTranscript = ""; // 새 녹화 시작 시 텍스트 초기화
-            transcriptBox.textContent = "음성 인식이 여기에 표시됩니다...";
-            recognition.start();
-        }
+        if (recognition) recognition.start();
         
         // UI 상태 업데이트
         recordBtn.innerHTML = "종료";
@@ -371,18 +366,16 @@
         timerDisplay.textContent = "00:00";
         startTimer();
     }
-    // --- ▲▲▲▲▲ 여기까지 수정 ▲▲▲▲▲ ---
-
+    
+    // 이하 saveBtn, questionSelect, copyBtn, searchQuestionsBtn, window.load 이벤트 리스너는 기존과 동일
     saveBtn.addEventListener("click", () => {
         if (recordedChunks.length === 0) {
             alert("저장할 영상 데이터가 없습니다.");
             return;
         }
-        
         const blob = new Blob(recordedChunks, { type: "video/webm" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
-        
         const department = document.getElementById("department").value || "면접연습";
         const date = new Date().toISOString().slice(0, 10);
         let questionText = questionSelect.options[questionSelect.selectedIndex].text.substring(3);
@@ -390,24 +383,19 @@
             questionText = customQuestionInput.value.replace(/[^a-zA-Z0-9가-힣]/g, '').substring(0, 10) || "직접입력";
         }
         a.download = `${date}_${department}_${questionText}.webm`;
-
         a.href = url;
         document.body.appendChild(a);
         a.click();
-        
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-        
         alert("영상 다운로드가 시작됩니다!");
         saveBtn.disabled = true;
     });
-    
     questionSelect.addEventListener("change", () => {
         customQuestionInput.style.display = questionSelect.value === "custom" ? "block" : "none";
     });
-    
     copyBtn.addEventListener('click', () => {
-        if (!fullTranscript) {
+        if (!fullTranscript.trim()) {
             alert('복사할 답변 내용이 없습니다.');
             return;
         }
@@ -415,15 +403,11 @@
         if (questionSelect.value === "custom") {
             currentQuestion = customQuestionInput.value || "(직접 입력한 질문)";
         }
-        
-        const textToCopy = `[면접 질문]\n${currentQuestion}\n\n[학생 답변]\n${fullTranscript}`;
-        
+        const textToCopy = `[면접 질문]\n${currentQuestion}\n\n[학생 답변]\n${fullTranscript.trim()}`;
         navigator.clipboard.writeText(textToCopy).then(() => {
             copyBtn.textContent = '✅ 복사 완료!';
             setTimeout(() => { copyBtn.textContent = '📋 답변 복사'; }, 2000);
         }).catch(err => {
-            console.error('복사 실패:', err);
-            // 구형 브라우저나 http 환경을 위한 대체 복사 로직
             const textArea = document.createElement('textarea');
             textArea.value = textToCopy;
             document.body.appendChild(textArea);
@@ -438,40 +422,31 @@
             document.body.removeChild(textArea);
         });
     });
-
     searchQuestionsBtn.addEventListener('click', () => {
         const universityName = document.getElementById('university').value.trim();
         if (!universityName) {
             alert('먼저 대학교 이름을 입력해주세요.');
             return;
         }
-        
         const adigaUrl = 'https://www.adiga.kr/ucp/uvt/uni/univView.do?menuId=PCUVTINF2000';
         window.open(adigaUrl, '_blank');
     });
-
-    // --- 페이지 로드 시 참여 코드 확인 기능 ---
     window.addEventListener("load", () => {
         const participationCode = "interview2025";
-        
-        // --- [개선] URL 파라미터로 코드 자동 입력 기능 추가 ---
         const urlParams = new URLSearchParams(window.location.search);
         const codeFromUrl = urlParams.get('code');
-        
         const enteredCode = codeFromUrl || prompt("프로그램 참여 코드를 입력하세요:", "");
-
         if (enteredCode === participationCode) {
             setupWebcam();
         } else {
-            if (codeFromUrl) { // URL 코드가 틀렸을 경우
+            if (codeFromUrl) {
                 alert("URL에 포함된 참여 코드가 올바르지 않습니다.");
-            } else { // 직접 입력한 코드가 틀렸을 경우
+            } else {
                 alert("참여 코드가 올바르지 않습니다. 사전 설문 완료 후 받은 코드를 확인해주세요.");
             }
             document.body.innerHTML = "<h1>접근 권한이 없습니다.</h1><p>사전 설문조사를 먼저 완료해주세요.</p>";
         }
     });
-
 </script>
 </body>
 </html>
