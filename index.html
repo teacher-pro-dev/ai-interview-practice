@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 기반 모의 면접 프로그램</title>
+    <title>AI 기반 모의 면접 프로그램 (키보드 입력 버전)</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
         body { background-color: #F0F4F8; font-family: 'Noto Sans KR', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
@@ -30,7 +30,10 @@
         .input-group input, .input-group select { width: 100%; padding: 12px; background-color: #F0F4F8; border: 1px solid #EAECEF; color: #333; border-radius: 8px; font-size: 1em; }
         #customQuestion { margin-top: 10px; }
         .output-group { background: white; padding: 15px; border-radius: 12px; border: 1px solid #EAECEF; flex-grow: 1; display: flex; flex-direction: column; }
-        .output-box { overflow-y: auto; flex-grow: 1; line-height: 1.7; font-size: 0.95em; }
+        /* ▼▼▼ [수정] textarea 스타일 추가 ▼▼▼ */
+        .output-box { overflow-y: auto; flex-grow: 1; line-height: 1.7; font-size: 0.95em; width: 100%; border: none; resize: none; background-color: #F9FAFB; padding: 8px; box-sizing: border-box; border-radius: 8px;}
+        .output-box:focus { outline: 2px solid #4A90E2; }
+        /* ▲▲▲ 수정 끝 ▲▲▲ */
         #copyBtn { margin-left: auto; padding: 5px 10px; font-size: 0.8em; background-color: #4A90E2; color: white; border: none; border-radius: 5px; cursor: pointer; }
         .feedback-guide p { margin: 10px 0; font-size: 0.9em; }
         .feedback-guide a { display: block; text-align: center; padding: 15px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 1.1em; background-color: #333; color: white; transition: background-color 0.2s; }
@@ -41,9 +44,6 @@
             .container { flex-direction: column; height: auto; max-height: none; width: 95%; }
             .video-section { border-right: none; border-bottom: 1px solid #EAECEF; padding: 20px; }
             .info-section { padding: 20px; }
-            #programTitle { font-size: 1.5em; }
-            .controls button { width: 45px; height: 45px; font-size: 1.3em; }
-            #recordBtn { width: 55px; height: 55px; font-size: 1em; }
         }
     </style>
 </head>
@@ -53,7 +53,7 @@
             <div id="countdown"></div>
             <div class="header-info">
                 <h1 id="programTitle">모의 면접 프로그램</h1>
-                <p id="usageGuide">답변 종료 후 '답변 복사' 버튼을 누르고, 'AI 기반 피드백 받기'를 눌러 챗봇에게 질문하세요.</p>
+                <p id="usageGuide">녹화 시작 후, 아래 답변란을 터치하여 키보드의 마이크(🎤)로 답변하세요.</p>
             </div>
             <div class="video-container">
                 <video id="webcam" autoplay playsinline muted></video>
@@ -104,8 +104,8 @@
             </div>
             <div class="output-group">
                 <h3 style="display: flex; align-items: center;">4. 학생 답변 내용 <button id="copyBtn">📋 답변 복사</button></h3>
-                <div id="transcriptBox" class="output-box">답변을 녹화하면 음성인식 결과가 여기에 표시됩니다...</div>
-            </div>
+                <textarea id="transcriptBox" class="output-box" placeholder="녹화 시작 후, 이곳을 터치하여 키보드의 마이크(🎤) 버튼으로 답변을 입력하세요..."></textarea>
+                </div>
             <div class="output-group">
                 <h3>5. AI 피드백 받기</h3>
                 <div class="output-box feedback-guide">
@@ -138,66 +138,18 @@
     let isPaused = false;
     let timerInterval = null;
     let seconds = 0;
-    let fullTranscript = "";
-    let isRecording = false; // <<< [추가] 녹화 상태를 명확히 추적하는 변수
+    let isRecording = false;
 
-    // --- ▼▼▼▼▼ [핵심 수정] 음성 인식 API 설정 (안정성 강화 버전) ▼▼▼▼▼ ---
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    let recognition;
-
-    if (SpeechRecognition) {
-        recognition = new SpeechRecognition();
-        recognition.interimResults = true; // 중간 결과는 계속 받아옴
-        recognition.lang = "ko-KR";
-        recognition.continuous = false; // '짧게' 인식하고 자동 종료되도록 변경
-
-        // 음성 인식 결과가 있을 때
-        recognition.onresult = (event) => {
-            let interimTranscript = "";
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-                const transcript = event.results[i][0].transcript;
-                if (event.results[i].isFinal) {
-                    fullTranscript += transcript + ' ';
-                } else {
-                    interimTranscript += transcript;
-                }
-            }
-            transcriptBox.innerHTML = fullTranscript + '<i style="color:#999;">' + interimTranscript + "</i>";
-        };
-
-        // 음성 인식이 '종료될 때마다' 호출되는 이벤트
-        recognition.onend = () => {
-            // isRecording 플래그를 확인하여, 사용자가 '종료' 버튼을 누른게 아니라면
-            // 인식을 즉시 다시 시작해서 계속 이어가는 효과를 냄
-            if (isRecording && !isPaused) {
-                recognition.start();
-            }
-        };
-        
-        recognition.onerror = (event) => {
-            // 오류가 발생해도 onend가 호출되므로, 여기서는 콘솔에 로그만 남김
-            console.error("Speech recognition error:", event);
-        };
-
-    } else {
-        transcriptBox.textContent = "현재 브라우저에서는 음성 인식을 지원하지 않습니다.";
-    }
-    // --- ▲▲▲▲▲ 여기까지 핵심 수정 ▲▲▲▲▲ ---
-
+    // --- ▼▼▼ [핵심 수정] SpeechRecognition 관련 코드 전체 삭제 ▼▼▼ ---
+    // 웹 음성 인식 API를 사용하지 않으므로 관련 코드를 모두 제거했습니다.
+    // --- ▲▲▲ 수정 끝 ▲▲▲ ---
 
     // --- 3. 핵심 기능 함수 ---
     async function setupWebcam() {
         try {
             const constraints = { 
-                video: {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    facingMode: 'user'
-                }, 
-                audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true
-                } 
+                video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' }, 
+                audio: { echoCancellation: true, noiseSuppression: true } 
             };
             stream = await navigator.mediaDevices.getUserMedia(constraints);
             webcamVideo.srcObject = stream;
@@ -235,6 +187,10 @@
     }
 
     async function sendDataToServer() {
+        // ▼▼▼ [수정] textarea에서 직접 텍스트를 가져오도록 변경 ▼▼▼
+        const transcriptValue = transcriptBox.value.trim();
+        // ▲▲▲ 수정 끝 ▲▲▲
+
         const webAppUrl = "https://script.google.com/macros/s/AKfycbwq_4sO5v0hxlvnoRN82cUpkOcE7XjrpoBaVUbTvdB1G9fuQufDw0jcym0gwBlKF0vw/exec";
         const schoolValue = document.getElementById("studentSchool").value.trim();
         const nicknameValue = document.getElementById("studentNickname").value.trim();
@@ -248,7 +204,7 @@
         formData.append('nickname', nicknameValue);
         formData.append('gender', genderValue);
         formData.append('question', questionValue);
-        formData.append('transcript', fullTranscript.trim() || "답변 내용 없음");
+        formData.append('transcript', transcriptValue || "답변 내용 없음");
         try {
             await fetch(webAppUrl, { method: 'POST', body: formData });
         } catch (error) {
@@ -265,30 +221,25 @@
 
     pauseBtn.addEventListener("click", () => {
         if (!mediaRecorder) return;
-        isPaused = !isPaused; // isPaused 상태 먼저 변경
+        isPaused = !isPaused;
         if (isPaused) {
             mediaRecorder.pause();
             stopTimer();
             pauseBtn.innerHTML = "▶️";
             pauseBtn.title = "녹화 재개";
-            if (recognition) recognition.stop(); // 일시정지 시 인식 중단
         } else {
             mediaRecorder.resume();
             startTimer();
             pauseBtn.innerHTML = "⏸️";
             pauseBtn.title = "일시 정지";
-            if (recognition) recognition.start(); // 재개 시 인식 다시 시작
         }
     });
 
     recordBtn.addEventListener("click", () => {
         if (isRecording) {
-            // 녹화 종료 로직
-            isRecording = false; // <<< [수정] 상태 플래그 먼저 변경
+            isRecording = false;
             mediaRecorder.stop();
-            if (recognition) recognition.stop();
         } else {
-            // 녹화 시작 전 정보 확인
             const schoolValue = document.getElementById("studentSchool").value.trim();
             const nicknameValue = document.getElementById("studentNickname").value.trim();
             const genderValue = document.getElementById("studentGender").value;
@@ -297,7 +248,6 @@
                 return;
             }
 
-            // 카운트다운 후 녹화 시작
             let countdown = 3;
             countdownDisplay.style.display = "block";
             countdownDisplay.textContent = countdown;
@@ -311,18 +261,17 @@
                     clearInterval(countdownInterval);
                     countdownDisplay.style.display = "none";
                     recordBtn.disabled = false;
-                    startRecording(); // 실제 녹화 시작 함수 호출
+                    startRecording();
                 }
             }, 1000);
         }
     });
 
     function startRecording() {
-        isRecording = true; // <<< [수정] 녹화 시작 시 상태 플래그 true
+        isRecording = true;
         isPaused = false;
         recordedChunks = [];
-        fullTranscript = "";
-        transcriptBox.innerHTML = "음성 인식이 여기에 표시됩니다...";
+        transcriptBox.value = ""; // textarea 내용 초기화
         
         const options = { mimeType: 'video/webm; codecs=vp8, opus' };
         try {
@@ -342,8 +291,6 @@
         
         mediaRecorder.onstop = () => {
             sendDataToServer();
-            
-            // UI 상태 업데이트
             recordBtn.innerHTML = "녹화";
             recordBtn.title = "녹화 시작";
             recordBtn.classList.remove("recording");
@@ -354,9 +301,7 @@
         };
 
         mediaRecorder.start();
-        if (recognition) recognition.start();
         
-        // UI 상태 업데이트
         recordBtn.innerHTML = "종료";
         recordBtn.title = "녹화 종료";
         recordBtn.classList.add("recording");
@@ -367,7 +312,6 @@
         startTimer();
     }
     
-    // 이하 saveBtn, questionSelect, copyBtn, searchQuestionsBtn, window.load 이벤트 리스너는 기존과 동일
     saveBtn.addEventListener("click", () => {
         if (recordedChunks.length === 0) {
             alert("저장할 영상 데이터가 없습니다.");
@@ -391,37 +335,32 @@
         alert("영상 다운로드가 시작됩니다!");
         saveBtn.disabled = true;
     });
+
     questionSelect.addEventListener("change", () => {
         customQuestionInput.style.display = questionSelect.value === "custom" ? "block" : "none";
     });
+
     copyBtn.addEventListener('click', () => {
-        if (!fullTranscript.trim()) {
+        // ▼▼▼ [수정] textarea에서 직접 텍스트를 가져오도록 변경 ▼▼▼
+        const transcriptValue = transcriptBox.value.trim();
+        if (!transcriptValue) {
             alert('복사할 답변 내용이 없습니다.');
             return;
         }
+        // ▲▲▲ 수정 끝 ▲▲▲
         let currentQuestion = questionSelect.options[questionSelect.selectedIndex].text;
         if (questionSelect.value === "custom") {
             currentQuestion = customQuestionInput.value || "(직접 입력한 질문)";
         }
-        const textToCopy = `[면접 질문]\n${currentQuestion}\n\n[학생 답변]\n${fullTranscript.trim()}`;
+        const textToCopy = `[면접 질문]\n${currentQuestion}\n\n[학생 답변]\n${transcriptValue}`;
         navigator.clipboard.writeText(textToCopy).then(() => {
             copyBtn.textContent = '✅ 복사 완료!';
             setTimeout(() => { copyBtn.textContent = '📋 답변 복사'; }, 2000);
         }).catch(err => {
-            const textArea = document.createElement('textarea');
-            textArea.value = textToCopy;
-            document.body.appendChild(textArea);
-            textArea.select();
-            try {
-                document.execCommand('copy');
-                copyBtn.textContent = '✅ 복사 완료!';
-                setTimeout(() => { copyBtn.textContent = '📋 답변 복사'; }, 2000);
-            } catch (e) {
-                alert('답변을 복사하는 데 실패했습니다.');
-            }
-            document.body.removeChild(textArea);
+            alert('답변을 복사하는 데 실패했습니다.');
         });
     });
+
     searchQuestionsBtn.addEventListener('click', () => {
         const universityName = document.getElementById('university').value.trim();
         if (!universityName) {
@@ -431,6 +370,7 @@
         const adigaUrl = 'https://www.adiga.kr/ucp/uvt/uni/univView.do?menuId=PCUVTINF2000';
         window.open(adigaUrl, '_blank');
     });
+
     window.addEventListener("load", () => {
         const participationCode = "interview2025";
         const urlParams = new URLSearchParams(window.location.search);
@@ -439,12 +379,8 @@
         if (enteredCode === participationCode) {
             setupWebcam();
         } else {
-            if (codeFromUrl) {
-                alert("URL에 포함된 참여 코드가 올바르지 않습니다.");
-            } else {
-                alert("참여 코드가 올바르지 않습니다. 사전 설문 완료 후 받은 코드를 확인해주세요.");
-            }
-            document.body.innerHTML = "<h1>접근 권한이 없습니다.</h1><p>사전 설문조사를 먼저 완료해주세요.</p>";
+            alert(codeFromUrl ? "URL에 포함된 참여 코드가 올바르지 않습니다." : "참여 코드가 올바르지 않습니다.");
+            document.body.innerHTML = "<h1>접근 권한이 없습니다.</h1><p>교사에게 문의하여 정확한 접속 주소와 참여 코드를 확인하세요.</p>";
         }
     });
 </script>
